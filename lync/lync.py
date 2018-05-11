@@ -34,6 +34,7 @@ LYNC_MAX_ZONES = 16
 
 _LOGGER = logging.getLogger(__name__)
 
+__version__ = '0.1.0'
 
 # Commands to the Lync
 # command, (id, length, args)
