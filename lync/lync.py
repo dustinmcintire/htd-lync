@@ -34,8 +34,6 @@ LYNC_MAX_ZONES = 16
 
 _LOGGER = logging.getLogger(__name__)
 
-__version__ = '0.1.0'
-
 # Commands to the Lync
 # command, (id, length, args)
 LYNC_TX_CMDS = {
@@ -586,7 +584,7 @@ class LyncRemote(LyncBase):
         self._ws.send(super().set_mute(zone,mute))
 
     # Websocket command handlers
-    def __on_message(self, ws, message):
+    def __on_message(self, message):
         self._buf.extend(message)
         while True:
             # process one command from the byte stream and pop it off
@@ -595,10 +593,10 @@ class LyncRemote(LyncBase):
                 break
             del self._buf[0:frame_len]
 
-    def __on_error(self, ws, error):
+    def __on_error(self, error):
         _LOGGER.info("WS error %s", error)
     
-    def __on_close(self, ws):
+    def __on_close(self):
         _LOGGER.info("WS closed")
 
     def __ws_run_forever(self):

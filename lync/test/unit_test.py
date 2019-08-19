@@ -4,7 +4,7 @@ import logging
 from lync import LyncRemote
 import time
 
-IP_ADDRESS = '192.168.1.9'
+IP_ADDRESS = '192.168.1.27'
 PORT = '8000'
 logging.basicConfig(filename='lync_debugging.log', level=logging.DEBUG,
                     format='%(asctime)s:%(name)s:%(levelname)s:%(funcName)s():%(message)s')

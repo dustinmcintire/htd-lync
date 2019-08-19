@@ -20,7 +20,11 @@ setup(name='lync',
       description='Lync API for HTD Lync6/12 and commands to provide support within home-assistant.io',
       version=lync.__version__,
       long_description=open(os.path.join(CURRENT_DIR, 'README.md')).read(),
-      install_requires=['requests, websocket, serial, binascii'],
+      install_requires=[
+          'requests', 
+          'websocket-client', 
+          'serial' 
+          ],
       maintainer='Dustin McIntire',
       maintainer_email='dustin.mcintire@gmail.com',
       zip_safe=False,
