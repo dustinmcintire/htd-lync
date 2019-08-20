@@ -110,6 +110,14 @@ def test4():
     x.set_power('1', zone, '0')
     _LOGGER.debug("Zone %s source=%s", zone, x.get_source('1',zone))
 
+def test5():
+    x = LyncRemote('0.0.0.0')
+    x.connect(IP_ADDRESS)
+    x.is_connected()
+    x.close()
+    x.is_connected()
+    x.connect()
+    x.is_connected()
 
 #Run test 1...
-test1()
+#test5()

@@ -184,14 +184,14 @@ class LyncBase:
             self.zone_info[zone]['balance'] = self.__signed_byte(data[8])
         elif cmd == 'zone source name':
             # remove the extra null bytes
-            self.source_info[zone] = data[0:11].decode().rstrip('\0')
+            self.source_info[zone] = str(data[0:11].decode().rstrip('\0')).lower()
         elif cmd == 'zone name':
-            name=data[0:11].decode().rstrip('\0')
+            name = str(data[0:11].decode().rstrip('\0')).lower()
             self.zone_info[zone]['name'] = name
-            self.zone_lookup[name] = zone
+            self.zone_lookup[name] = str(zone).lower()
         elif cmd == 'source name':
             source = data[11]
-            name = data[0:10].decode().rstrip('\0')
+            name = str(data[0:10].decode().rstrip('\0')).lower()
             self.zone_info[zone]['source_list'][source] = name
             self.source_info[zone][name] = source
         elif cmd == 'mp3 on':
@@ -259,7 +259,7 @@ class LyncBase:
             cmd_id=LYNC_TX_CMDS[cmd][0]
             frame = bytearray()
             frame.extend(LYNC_HEADER)
-            frame.extend(zone.to_bytes(1,byteorder='little'))
+            frame.extend(int(zone).to_bytes(1,byteorder='little'))
             frame.extend(cmd_id.to_bytes(1,byteorder='little'))
             frame.extend(args)
             # fill
@@ -273,11 +273,11 @@ class LyncBase:
             _LOGGER.info("Invalid command name %s", cmd)
             return
         # Find the zone number from name
-        if not zone_name in self.zone_lookup:
+        if not zone_name.lower() in self.zone_lookup:
             _LOGGER.info("Zone %s does not exist in the list", zone_name)
             return
         else:
-            zone_number = self.zone_lookup[zone_name]
+            zone_number = self.zone_lookup[zone_name.lower()]
         arg=b'\x00'
         # Generate the arguments
         if LYNC_TX_CMDS[cmd][1] > 1:
@@ -309,11 +309,11 @@ class LyncBase:
         """
         #if zone is given by string name then convert to the number
         if isinstance(zone,str):
-            if not zone in self.zone_lookup:
+            if not zone.lower() in self.zone_lookup:
                 # assume string integer
                 return int(zone)
             else:
-                return self.zone_lookup[zone]
+                return int(self.zone_lookup[zone.lower()])
         else:
             return zone
 
@@ -323,8 +323,10 @@ class LyncBase:
         """
         #if zone is given by string name then convert to the number
         if isinstance(zone,str):
-            if not zone in self.zone_lookup:
+            if not zone.lower() in self.zone_lookup:
                 # try again as string integer
+                print("Zone is " , zone.lower())
+                print("Lookup is " , self.zone_lookup)
                 return self.zone_info[int(zone)]['name']
             else:
                 return zone
@@ -338,10 +340,10 @@ class LyncBase:
         """
         zn = self.zone_to_num(zone)
         if isinstance(source,str):
-            if not source in self.source_info[zn]:
+            if not source.lower() in self.source_info[zn]:
                 # try again as string integer
                 return int(source)
-            return self.source_info[zn][source]
+            return self.source_info[zn][source.lower()]
         else:
             return source
 
@@ -423,7 +425,7 @@ class LyncBase:
         """
         volume_level = self.get_zone_info(zone)['volume']
         if volume_level is not None:
-            volume_level = ((volume_level/-60) * 100)
+            volume_level = int(((1-(volume_level/-60)) * 100))
         return volume_level
 
     def print_state(self):
@@ -461,7 +463,14 @@ class LyncSerial(LyncBase):
 
     def is_connected(self):
         """ Check we are connected """
+        if self._ser is None:
+            return False
         return self._ser.is_open
+
+    def close(self):
+        if self._ser is None:
+            return 
+        self._ser.close()
 
     def set_power(self, zone, power):
         self._ser.write(super().set_power(zone,power))
@@ -508,6 +517,8 @@ class LyncRemote(LyncBase):
         self._timeout = LYNC_SOCKET_TIMEOUT
         self._lock = threading.Lock()   # Used to ensure only one thread sends commands
         self._buf = bytearray() # initialized empty buffer
+        self._ws = None
+        self._wst = None
         super().__init__()
 
     def connect(self, host=None, port=None):
@@ -551,10 +562,24 @@ class LyncRemote(LyncBase):
 
     def is_connected(self):
         """ Check we are connected """
+        if self._ws is None or self._ws.sock is None:
+            return False
         return self._ws.sock.connected
 
-        # Call a thread to refresh the state
+    def close(self):
+        if self._ws is None:
+            return 
+        try:
+            self._wst_run = False
+            self._ws.close()
+            self._wst.join()
+            _LOGGER.info("Closed connection to Lync GW on %s:%s", self._hostname, self._port)
+        except self._ws.socket.error as msg:
+            _LOGGER.error("Couldn't disconnect")
+            _LOGGER.error(msg)
+
     def refresh_zone(self, zone=0):
+        # Call a thread to refresh the state
         # Set longer timeout for multiple responses
         zn = super().zone_to_name(zone)
         if zn is 'all':
@@ -563,7 +588,7 @@ class LyncRemote(LyncBase):
             self.__send_command('query all zones', zn)
             self._timeout = orig
         else:
-            self.send('query all zones', zn)
+            self.__send_command('query all zones', zn)
 
     def update(self):
         self.refresh_zone('all')
