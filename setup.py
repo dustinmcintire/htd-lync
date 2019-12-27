@@ -5,7 +5,9 @@ import sys
 import os
 from setuptools import setup, find_packages
 
-import lync
+#import lync
+exec(open('lync/version.py').read())
+#from lync.version import __version__
 
 # import subprocess
 sys.path.insert(0, '.')
@@ -18,7 +20,7 @@ CURRENT_DIR = os.path.dirname(__file__)
 # and be sure to test it firstly using "python setup.py register sdist upload -r pypitest"
 setup(name='lync',
       description='Lync API for HTD Lync6/12 and commands to provide support within home-assistant.io',
-      version=lync.__version__,
+      version=__version__,
       long_description=open(os.path.join(CURRENT_DIR, 'README.md')).read(),
       install_requires=[
           'requests', 
