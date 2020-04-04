@@ -74,7 +74,7 @@ LYNC_TX_CMDS = {
     'query zone source name' : (0x0E, 1, { 'none' : 0 }),
     'query host firmware version' : (0x0F, 1, { 'none' : 0 }),
     'query volume value' : (0x10, 1, { 'none' : 0 }),
-    'volume setting control' : (0x15, 1, (0 , 0x80)),
+    'volume setting control' : (0x15, 1, (0 , 255)),
     'balance setting control' : (0x16, 1, (18 , 0x92)),
     'treble setting control' : (0x17, 1, (10 , 0x8A)),
     'bass setting control' : (0x18, 1, (10 , 0x8A)),
@@ -100,7 +100,7 @@ LYNC_RX_CMDS = {
     0x12 : ('mp3 artist name', 64, { }),
     0x13 : ('mp3 on', 1, { }),
     0x14 : ('mp3 off', 17, { }),
-    0x1b : ('undefined', 9, { }),
+    0x1b : ('error', 9, { }),
     }
 
 class LyncBase:
@@ -131,6 +131,7 @@ class LyncBase:
         return signed
 
     def __parse_command(self, zone, cmd, arg_info, data):
+        #_LOGGER.debug("Received response: %s", cmd)
         if cmd == 'keypad exists':
             # this is zone 0 with all zone data
             # second byte is zone 0-7
@@ -202,6 +203,8 @@ class LyncBase:
             self.mp3_status['file'] = data.decode().rstrip('\0')
         elif cmd == 'mp3 artist name':
             self.mp3_status['artist'] = data.decode().rstrip('\0')
+        elif cmd == 'error':
+            _LOGGER.warn("Error response: %d", int(self.__signed_byte(data[0])))
         else:
             _LOGGER.info("Not processing packet type: %s", cmd)
     
@@ -234,9 +237,10 @@ class LyncBase:
         zone = int(c[zone_idx])
         cmd_info = LYNC_RX_CMDS[c[cmd_idx]]
         cmd_name = cmd_info[0]
-        if cmd_name is 'unknown':
-            _LOGGER.info("Unknown packet command: %02x", int(c[cmd_idx]))
-            #_LOGGER.debug("Packet buffer: %s", str(binascii.hexlify(c[0:20])))
+        #_LOGGER.debug("Got command: %s zone: %d name: %s", c[cmd_idx], zone, cmd_name)
+        if cmd_name is 'undefined':
+            _LOGGER.info("Undefined response command: %02x", int(c[cmd_idx]))
+            _LOGGER.debug("Packet buffer: %s", str(binascii.hexlify(c[0:20])))
             return start + len(LYNC_HEADER)
         cmd_length = cmd_info[1]
         # not enough data, wait for more
@@ -264,6 +268,7 @@ class LyncBase:
             frame.extend(args)
             # fill
             s = sum(frame)
+            s &= 0xFF
             frame.extend(s.to_bytes(1,byteorder='little'))
             _LOGGER.debug("Sending %s", str(binascii.hexlify(frame)))
             return frame
@@ -290,7 +295,12 @@ class LyncBase:
         elif isinstance(val,int):
             # add the key to the argument and use the value as the offset
             (offset, scale) = LYNC_TX_CMDS[cmd][2]
-            arg=(val - offset + scale).to_bytes(1,byteorder='little')
+            tmp = val-offset+scale
+            #_LOGGER.debug("Volume value %d", tmp)
+            if tmp < 0:
+                arg=tmp.to_bytes(1,byteorder='little', signed=True)
+            else:
+                arg=tmp.to_bytes(1,byteorder='little', signed=False)
         elif isinstance(val,str): 
             if not val in LYNC_TX_CMDS[cmd][2]:
                 _LOGGER.error("Command argument is not valid %s", val)
@@ -311,7 +321,12 @@ class LyncBase:
         if isinstance(zone,str):
             if not zone.lower() in self.zone_lookup:
                 # assume string integer
-                return int(zone)
+                try:
+                    val = int(zone)
+                    return val
+                except ValueError:
+                    _LOGGER.error("Unknown argument value %s of type  %s", zone, type(zone))
+                    return 0
             else:
                 return int(self.zone_lookup[zone.lower()])
         else:
@@ -325,9 +340,14 @@ class LyncBase:
         if isinstance(zone,str):
             if not zone.lower() in self.zone_lookup:
                 # try again as string integer
-                print("Zone is " , zone.lower())
-                print("Lookup is " , self.zone_lookup)
-                return self.zone_info[int(zone)]['name']
+                _LOGGER.debug("Zone is %s" , zone.lower())
+                _LOGGER.debug("Lookup is %s" , self.zone_lookup)
+                try:
+                    zone_name = self.zone_info[int(zone)]['name']
+                except ValueError:
+                    # try as original name string
+                    zone_name = zone
+                return zone_name 
             else:
                 return zone
         else:
@@ -380,10 +400,10 @@ class LyncBase:
         :param volume: The volume as a 0-100 decimal.
         Converts 0 to 100 to a -60 to 0 scale for lync
         """
-        scaled = int(((60/100) * volume) - 60)
-        _LOGGER.debug("zone= %s, change volume to %s (%s)", zone, volume, scaled)
+        db = int(((60/100) * volume) - 60)
+        _LOGGER.debug("zone= %s, change volume to %s (%s)", zone, volume, db)
         return self.create_send_message('volume setting control', 
-                                        self.zone_to_name(zone), scaled)
+                                        self.zone_to_name(zone), db)
 
     def set_source(self, zone, source):
         """ Set source for a zone - 0 based value for source or name """
@@ -429,12 +449,12 @@ class LyncBase:
         return volume_level
 
     def print_state(self):
-        print("zone status")
-        print(self.zone_info)
-        print("zone names")
-        print(self.zone_lookup)
-        print("source info")
-        print(self.source_info)
+        _LOGGER.info("zone status")
+        _LOGGER.info(self.zone_info)
+        _LOGGER.info("zone names")
+        _LOGGER.info(self.zone_lookup)
+        _LOGGER.info("source info")
+        _LOGGER.info(self.source_info)
 
 class LyncSerial(LyncBase):
     """class to operate the HTD lync serial API directly using the UART control port.
@@ -517,12 +537,26 @@ class LyncRemote(LyncBase):
         self._timeout = LYNC_SOCKET_TIMEOUT
         self._lock = threading.Lock()   # Used to ensure only one thread sends commands
         self._buf = bytearray() # initialized empty buffer
+        self._connecting = False
         self._ws = None
         self._wst = None
+        self._wst_run = False
+        self._ct = None
+        self._ct_run = False
         super().__init__()
 
     def connect(self, host=None, port=None):
+        # wait for previous connection request to complete
+        if self._connecting:
+            return False
+
+        # warn if already connected
+        if self.is_connected():
+            _LOGGER.warn("Already connected to HTD controller.")
+            return True
+
         """ Connect to the GW-SL1 gatway """
+        self._connecting = True
         self._hostname = host if host is not None else self._hostname
         self._port = port if port is not None else self._port
         # Do the http basic auth
@@ -531,6 +565,7 @@ class LyncRemote(LyncBase):
         if r.status_code != requests.codes.ok:
             _LOGGER.error("Error trying to authenticate to HTD controller.")
             _LOGGER.error(r.status_code)
+            self._connecting = False
             return False
         _LOGGER.info("Successfully authenticated to HTD Lync at %s", self._hostname)
 
@@ -545,19 +580,20 @@ class LyncRemote(LyncBase):
         self._wst.start()
 
         timeout = LYNC_WS_CONNECT_TIMEOUT
-        while not self._ws.sock.connected and timeout:
+        while (self._ws.sock is None or not self._ws.sock.connected) and timeout:
             time.sleep(1)
             timeout -= 1
 
-        if not self._ws.sock.connected:
+        if timeout is 0:
             _LOGGER.error("Error trying to connect to Lync websocket.")
             _LOGGER.error(self._ws.sock.status)
             self._wst_run = False
+            self._connecting = False
             return False
         _LOGGER.info("Successfully connected to HTD Lync on %s:%s", self._hostname, self._port)
 
-        # Get the latest status
-        self.update()
+        # Set connected state
+        self._connecting = False
         return True
 
     def is_connected(self):
@@ -566,7 +602,29 @@ class LyncRemote(LyncBase):
             return False
         return self._ws.sock.connected
 
-    def close(self):
+
+    def close(self, delay=0):
+        # Reset timer if already running
+        if self._ct_run:
+            self._ct_delay = delay
+            return True
+        # Start a new timer to close
+        _LOGGER.info("Starting close timer for %s seconds", delay)
+        self._ct = threading.Thread(target=self.__close_timer, daemon=True)
+        self._ct_delay = delay
+        self._ct_run = True
+        self._ct.start()
+        return True
+
+    def __close_timer(self):
+        while(self._ct_run and self._ct_delay > 0):
+            time.sleep(1)
+            self._ct_delay -= 1
+        if self._ct_run:
+            self._ct_run = False
+            self.__close()
+
+    def __close(self):
         if self._ws is None:
             return 
         try:
@@ -590,8 +648,16 @@ class LyncRemote(LyncBase):
         else:
             self.__send_command('query all zones', zn)
 
-    def update(self):
+    def update(self, zone='none'):
+        # Refetch the tables if they are not present
+        if not zone.lower() in self.zone_lookup:
+            self.init()
+
+    def init(self):
         self.refresh_zone('all')
+        # Wait for the response to be processed
+        time.sleep(3)
+        #_LOGGER.debug("%s", self.zone_info)
 
     def set_power(self, zone, power):
         self._ws.send(super().set_power(zone,power))
