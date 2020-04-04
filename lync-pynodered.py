@@ -13,17 +13,18 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_PORT = '8000'
 #DEFAULT_IP = '192.168.1.27'
 DEFAULT_IP = 'HTD-GW-SL1'
-refreshed = False
 
 server = LyncRemote(DEFAULT_IP)
 
 @node_red(category="pyfuncs",
           properties=dict(address=NodeProperty("IP Address", value=DEFAULT_IP)))
 def connect(node, msg):
+    _LOGGER.debug("node_red connect called")
     if not server.is_connected():
         server.connect(node.address.value)
-        refreshed = True
     if server.is_connected():
+        # Update the states
+        server.init()
         msg['payload'] = 'connected'
     else:
         msg['payload'] = 'not connected'
@@ -33,17 +34,7 @@ def connect(node, msg):
 @node_red(category="pyfuncs",
           properties=dict(address=NodeProperty("IP Address", value=DEFAULT_IP)))
 def set_power(node, msg):
-    global refreshed
-    # Try to connect to the server
-    if not server.is_connected():
-        server.connect(node.address.value)
-        if not refreshed:
-            time.sleep(3)
-            refreshed = True
-
-    if not server.is_connected():
-        _LOGGER.error("Can't connected to server at %s", node.address.value)
-
+    _LOGGER.debug("node_red set_power called")
     # Topic is the zone name
     zone = msg['topic']
     if zone is None:
@@ -56,27 +47,30 @@ def set_power(node, msg):
         state = 'off'
     else:
         state = payload
+    # Try to connect to the server
+    tries = 3
+    while not server.is_connected() and tries > 0:
+        server.connect(node.address.value)
+        if server.is_connected():
+            server.update(zone)
+        else:
+            time.sleep(3)
+            tries -= 1
 
+    if not server.is_connected():
+        _LOGGER.error("Can't connected to server at %s", node.address.value)
+        msg['payload'] = 'not connected'
+        return msg
     # Set the power state
     server.set_power(zone, state)
     # Shutdown the connection
-    server.close()
+    server.close(delay=30)
     return msg
 
 @node_red(category="pyfuncs",
           properties=dict(address=NodeProperty("IP Address", value=DEFAULT_IP)))
 def set_volume(node, msg):
-    global refreshed
-    # Try to connect to the server
-    if not server.is_connected():
-        server.connect(node.address.value)
-        if not refreshed:
-            time.sleep(3)
-            refreshed = True
-
-    if not server.is_connected():
-        _LOGGER.error("Can't connected to server at %s", node.address.value)
-
+    _LOGGER.debug("node_red set_volume called")
     # Topic is the zone name
     zone = msg['topic']
     if zone is None:
@@ -86,10 +80,24 @@ def set_volume(node, msg):
     if vol < 0 or vol > 100:
         _LOGGER.error("Invalid message payload %s", str(vol))
         return None
+    # Try to connect to the server
+    tries = 3
+    while not server.is_connected() and tries > 0:
+        server.connect(node.address.value)
+        if server.is_connected():
+            server.update(zone)
+        else:
+            time.sleep(3)
+            tries -= 1
+
+    if not server.is_connected():
+        _LOGGER.error("Can't connected to server at %s", node.address.value)
+        msg['payload'] = 'not connected'
+        return msg
 
     # Set the volume
     server.set_volume(zone, vol)
     # Shutdown the connection
-    server.close()
+    server.close(delay=30)
     return msg
     
