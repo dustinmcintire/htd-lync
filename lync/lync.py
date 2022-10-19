@@ -204,7 +204,7 @@ class LyncBase:
         elif cmd == 'mp3 artist name':
             self.mp3_status['artist'] = data.decode().rstrip('\0')
         elif cmd == 'error':
-            _LOGGER.warn("Error response: %d", int(self.__signed_byte(data[0])))
+            _LOGGER.warning("Error response: %d", int(self.__signed_byte(data[0])))
         else:
             _LOGGER.info("Not processing packet type: %s", cmd)
     
@@ -238,7 +238,7 @@ class LyncBase:
         cmd_info = LYNC_RX_CMDS[c[cmd_idx]]
         cmd_name = cmd_info[0]
         #_LOGGER.debug("Got command: %s zone: %d name: %s", c[cmd_idx], zone, cmd_name)
-        if cmd_name is 'undefined':
+        if cmd_name == 'undefined':
             _LOGGER.info("Undefined response command: %02x", int(c[cmd_idx]))
             _LOGGER.debug("Packet buffer: %s", str(binascii.hexlify(c[0:20])))
             return start + len(LYNC_HEADER)
@@ -552,7 +552,7 @@ class LyncRemote(LyncBase):
 
         # warn if already connected
         if self.is_connected():
-            _LOGGER.warn("Already connected to HTD controller.")
+            _LOGGER.warning("Already connected to HTD controller.")
             return True
 
         """ Connect to the GW-SL1 gatway """
@@ -584,7 +584,7 @@ class LyncRemote(LyncBase):
             time.sleep(1)
             timeout -= 1
 
-        if timeout is 0:
+        if timeout == 0:
             _LOGGER.error("Error trying to connect to Lync websocket.")
             _LOGGER.error(self._ws.sock.status)
             self._wst_run = False
@@ -640,7 +640,7 @@ class LyncRemote(LyncBase):
         # Call a thread to refresh the state
         # Set longer timeout for multiple responses
         zn = super().zone_to_name(zone)
-        if zn is 'all':
+        if zn == 'all':
             orig = self._timeout
             self._timeout = LYNC_REFRESH_TIMEOUT;
             self.__send_command('query all zones', zn)
@@ -675,7 +675,7 @@ class LyncRemote(LyncBase):
         self._ws.send(super().set_mute(zone,mute))
 
     # Websocket command handlers
-    def __on_message(self, message):
+    def __on_message(self, ws, message):
         self._buf.extend(message)
         while True:
             # process one command from the byte stream and pop it off
@@ -684,11 +684,11 @@ class LyncRemote(LyncBase):
                 break
             del self._buf[0:frame_len]
 
-    def __on_error(self, error):
+    def __on_error(self, ws, error):
         _LOGGER.info("WS error %s", error)
     
-    def __on_close(self):
-        _LOGGER.info("WS closed")
+    def __on_close(self, ws, status, msg):
+        _LOGGER.info("WS closed with: %s", msg)
 
     def __ws_run_forever(self):
         while self._wst_run:
