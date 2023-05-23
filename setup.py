@@ -23,7 +23,7 @@ setup(name='lync',
       version=__version__,
       long_description=open(os.path.join(CURRENT_DIR, 'README.md')).read(),
       install_requires=[
-          'hbmqtt',
+          'amqtt',
           'requests', 
           'websocket-client', 
           'serial' 

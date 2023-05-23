@@ -32,7 +32,10 @@ DEFAULT_PORT = '8000'
 DEFAULT_IP = '192.168.1.11'
 #DEFAULT_IP = 'HTD-GW-SL1'
 
-MQTT_BROKER_NAME = "eclipse-mosquitto"
+#MQTT_BROKER_NAME = "eclipse-mosquitto"
+#MQTT_BROKER_NAME = "ha.mcintires.org"
+MQTT_BROKER_NAME = "home-automation"
+MQTT_BROKER_PORT = "32130"
 MQTT_TOPIC_PREFIX = "home/speakers/"
 MQTT_STATE_TOPIC = "state"
 MQTT_REFRESH_TOPIC = "+/get"
@@ -131,7 +134,7 @@ async def mqtt_coro():
     # Connect to MQTT Broker
     try:
         C = MQTTClient(config=config)
-        await C.connect(uri='mqtt://' + MQTT_BROKER_NAME + '/', cleansession=False)
+        await C.connect(uri='mqtt://' + MQTT_BROKER_NAME + ':' + MQTT_BROKER_PORT + '/', cleansession=False)
         await C.subscribe([
             (MQTT_TOPIC_PREFIX + MQTT_COMMAND_TOPIC, QOS_0),
             (MQTT_TOPIC_PREFIX + MQTT_REFRESH_TOPIC, QOS_0),
